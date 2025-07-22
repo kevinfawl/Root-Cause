@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Root Cause Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 md:p-8">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 dark:text-white">Root Cause Analyzer</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-2">Enter a problem statement and let AI find the likely root cause.</p>
+        </div>
+
+        <!-- Input Section -->
+        <div class="mb-6">
+            <label for="problemStatement" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Problem Statement</label>
+            <textarea id="problemStatement" rows="6" class="w-full p-4 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200" placeholder="e.g., 'Our website's user engagement has dropped by 30% in the last quarter.'"></textarea>
+        </div>
+
+        <!-- Action Button -->
+        <div class="text-center mb-6">
+            <button id="analyzeButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-300 ease-in-out">
+                Analyze Root Cause
+            </button>
+        </div>
+
+        <!-- Result Section -->
+        <div id="resultContainer" class="mt-6 hidden">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Analysis Result</h2>
+            <div id="result" class="p-6 bg-blue-50 dark:bg-gray-700/50 border border-blue-200 dark:border-gray-600 rounded-lg">
+                <h3 class="font-semibold text-lg text-blue-800 dark:text-blue-300 mb-2">Potential Root Cause:</h3>
+                <p id="rootCauseText" class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap"></p>
+            </div>
+        </div>
+        
+        <!-- Loading Indicator -->
+        <div id="loader" class="text-center py-4 hidden">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mx-auto"></div>
+            <p class="mt-4 text-gray-500 dark:text-gray-400">Analyzing...</p>
+        </div>
+
+        <!-- Error Message Box -->
+        <div id="errorBox" class="hidden mt-4 p-4 bg-red-100 dark:bg-red-900/50 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-lg">
+            <p id="errorMessage"></p>
+        </div>
+
+    </div>
+
+    <script>
+        const analyzeButton = document.getElementById('analyzeButton');
+        const problemStatementInput = document.getElementById('problemStatement');
+        const resultContainer = document.getElementById('resultContainer');
+        const rootCauseText = document.getElementById('rootCauseText');
+        const loader = document.getElementById('loader');
+        const errorBox = document.getElementById('errorBox');
+        const errorMessage = document.getElementById('errorMessage');
+
+        analyzeButton.addEventListener('click', async () => {
+            const problemStatement = problemStatementInput.value.trim();
+
+            if (!problemStatement) {
+                showError('Please enter a problem statement.');
+                return;
+            }
+
+            // --- UI Updates: Show loader, hide previous results ---
+            loader.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            errorBox.classList.add('hidden');
+            analyzeButton.disabled = true;
+            analyzeButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                // --- Construct the prompt for the AI ---
+                const prompt = `
+                    As an expert in root cause analysis, please analyze the following problem statement and identify the single most likely root cause. 
+                    Provide a concise explanation for your conclusion. Do not provide a list of potential causes, but focus on the most probable one.
+                    
+                    Problem Statement: "${problemStatement}"
+                    
+                    Root Cause:
+                `;
+
+                // --- Call the Gemini API ---
+                const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // API key is handled by the environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+                
+                const result = await response.json();
+
+                // --- Process and display the result ---
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    
+                    const analysisText = result.candidates[0].content.parts[0].text;
+                    rootCauseText.textContent = analysisText.trim();
+                    resultContainer.classList.remove('hidden');
+                } else {
+                    throw new Error('Invalid response structure from the API.');
+                }
+
+            } catch (error) {
+                console.error("Error during analysis:", error);
+                showError('An error occurred during the analysis. Please try again.');
+            } finally {
+                // --- UI Cleanup: Hide loader, re-enable button ---
+                loader.classList.add('hidden');
+                analyzeButton.disabled = false;
+                analyzeButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorBox.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
