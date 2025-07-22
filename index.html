@@ -29,6 +29,16 @@
             <p class="text-gray-500 dark:text-gray-400 mt-2">Enter a problem statement and let AI find the likely root cause.</p>
         </div>
 
+        <!-- API Key Input Section -->
+        <div class="mb-6">
+            <label for="apiKey" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Your Google AI API Key</label>
+            <input type="password" id="apiKey" class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200" placeholder="Enter your API key here">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Your API key is stored only in your browser. 
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-500 hover:underline">Get your key from Google AI Studio.</a>
+            </p>
+        </div>
+
         <!-- Input Section -->
         <div class="mb-6">
             <label for="problemStatement" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Problem Statement</label>
@@ -67,19 +77,37 @@
     <script>
         const analyzeButton = document.getElementById('analyzeButton');
         const problemStatementInput = document.getElementById('problemStatement');
+        const apiKeyInput = document.getElementById('apiKey');
         const resultContainer = document.getElementById('resultContainer');
         const rootCauseText = document.getElementById('rootCauseText');
         const loader = document.getElementById('loader');
         const errorBox = document.getElementById('errorBox');
         const errorMessage = document.getElementById('errorMessage');
 
+        // On page load, try to get the API key from local storage
+        window.addEventListener('load', () => {
+            const savedApiKey = localStorage.getItem('geminiApiKey');
+            if (savedApiKey) {
+                apiKeyInput.value = savedApiKey;
+            }
+        });
+
         analyzeButton.addEventListener('click', async () => {
             const problemStatement = problemStatementInput.value.trim();
+            const userApiKey = apiKeyInput.value.trim();
 
+            // --- Input Validation ---
+            if (!userApiKey) {
+                showError('Please enter your Google AI API Key to proceed.');
+                return;
+            }
             if (!problemStatement) {
                 showError('Please enter a problem statement.');
                 return;
             }
+            
+            // --- Save API Key to local storage for convenience ---
+            localStorage.setItem('geminiApiKey', userApiKey);
 
             // --- UI Updates: Show loader, hide previous results ---
             loader.classList.remove('hidden');
@@ -102,8 +130,7 @@
                 // --- Call the Gemini API ---
                 const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
                 const payload = { contents: chatHistory };
-                const apiKey = ""; // API key is handled by the environment
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${userApiKey}`;
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -112,6 +139,10 @@
                 });
 
                 if (!response.ok) {
+                    // Provide more specific error for bad API keys
+                    if (response.status === 400) {
+                         throw new Error(`API request failed: Bad request. Please check if your API key is correct and valid.`);
+                    }
                     throw new Error(`API request failed with status ${response.status}`);
                 }
                 
@@ -126,12 +157,17 @@
                     rootCauseText.textContent = analysisText.trim();
                     resultContainer.classList.remove('hidden');
                 } else {
+                    // Handle cases where the API returns a success status but no content
+                    console.log('API Response:', result);
+                    if (result.promptFeedback && result.promptFeedback.blockReason) {
+                         throw new Error(`Request was blocked by the API. Reason: ${result.promptFeedback.blockReason}`);
+                    }
                     throw new Error('Invalid response structure from the API.');
                 }
 
             } catch (error) {
                 console.error("Error during analysis:", error);
-                showError('An error occurred during the analysis. Please try again.');
+                showError(error.message || 'An unknown error occurred during the analysis. Please try again.');
             } finally {
                 // --- UI Cleanup: Hide loader, re-enable button ---
                 loader.classList.add('hidden');
